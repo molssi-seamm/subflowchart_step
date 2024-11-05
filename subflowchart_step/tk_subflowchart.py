@@ -3,12 +3,11 @@
 """The graphical part of a Subflowchart step"""
 
 import pprint  # noqa: F401
-import tkinter as tk
+import tkinter as tk  # noqa: F401
 
 import subflowchart_step  # noqa: F401
 import seamm
 from seamm_util import ureg, Q_, units_class  # noqa: F401
-
 
 
 class TkSubflowchart(seamm.TkNode):
@@ -47,7 +46,7 @@ class TkSubflowchart(seamm.TkNode):
         self,
         tk_flowchart=None,
         node=None,
-        namespace="org.molssi.seamm.subflowchart.tk",
+        namespace="org.molssi.seamm.tk",
         canvas=None,
         x=None,
         y=None,
@@ -92,6 +91,9 @@ class TkSubflowchart(seamm.TkNode):
             w=w,
             h=h,
         )
+
+        self._previous = None
+
         self.create_dialog()
 
     def create_dialog(self):
@@ -112,7 +114,6 @@ class TkSubflowchart(seamm.TkNode):
         --------
         TkSubflowchart.reset_dialog
         """
-
         frame = super().create_dialog(title="Subflowchart")
         # make it large!
         screen_w = self.dialog.winfo_screenwidth()
@@ -125,9 +126,7 @@ class TkSubflowchart(seamm.TkNode):
         self.dialog.geometry(f"{w}x{h}+{x}+{y}")
 
         self.tk_subflowchart = seamm.TkFlowchart(
-            master=frame,
-            flowchart=self.node.subflowchart,
-            namespace=self.namespace
+            master=frame, flowchart=self.node.subflowchart, namespace=self.namespace
         )
         self.tk_subflowchart.draw()
 

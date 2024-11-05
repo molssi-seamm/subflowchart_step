@@ -12,8 +12,6 @@ from .subflowchart import Subflowchart  # noqa: F401, E501
 from .subflowchart_step import SubflowchartStep  # noqa: F401, E501
 from .tk_subflowchart import TkSubflowchart  # noqa: F401, E501
 
-from .metadata import metadata  # noqa: F401
-
 # Handle versioneer
 from ._version import get_versions
 

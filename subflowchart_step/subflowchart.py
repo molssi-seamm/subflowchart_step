@@ -8,6 +8,7 @@ from pathlib import Path
 import pkg_resources
 import pprint  # noqa: F401
 import sys
+import traceback
 
 import subflowchart_step
 import molsystem
@@ -64,9 +65,9 @@ class Subflowchart(seamm.Node):
         self,
         flowchart=None,
         title="Subflowchart",
-        namespace="org.molssi.seamm.subflowchart",
+        namespace="org.molssi.seamm",
         extension=None,
-        logger=logger
+        logger=logger,
     ):
         """A step for Subflowchart in a SEAMM flowchart.
 
@@ -93,9 +94,7 @@ class Subflowchart(seamm.Node):
         """
         logger.debug(f"Creating Subflowchart {self}")
         self.subflowchart = seamm.Flowchart(
-            parent=self,
-            name="Subflowchart",
-            namespace=namespace
+            parent=self, name="Subflowchart", namespace=namespace
         )  # yapf: disable
 
         super().__init__(
@@ -106,7 +105,7 @@ class Subflowchart(seamm.Node):
             logger=logger,
         )  # yapf: disable
 
-        self._metadata = subflowchart_step.metadata
+        self._file_handler = None
 
     @property
     def version(self):
@@ -117,6 +116,7 @@ class Subflowchart(seamm.Node):
     def git_revision(self):
         """The git version of this module."""
         return subflowchart_step.__git_revision__
+
     def set_id(self, node_id):
         """Set the id for node to a given tuple"""
         self._id = node_id
@@ -141,7 +141,10 @@ class Subflowchart(seamm.Node):
         str
             A description of the current step.
         """
+        # Make sure the subflowchart has the data from the parent flowchart
         self.subflowchart.root_directory = self.flowchart.root_directory
+        self.subflowchart.executor = self.flowchart.executor
+        self.subflowchart.in_jobserver = self.subflowchart.in_jobserver
 
         # Get the first real node
         node = self.subflowchart.get_node("1").next()
@@ -151,21 +154,19 @@ class Subflowchart(seamm.Node):
             try:
                 text += __(node.description_text(), indent=3 * " ").__str__()
             except Exception as e:
-                print(
-                    f"Error describing subflowchart flowchart: {e} in {node}"
-                )
+                print(f"Error describing subflowchart flowchart: {e} in {node}")
                 logger.critical(
                     f"Error describing subflowchart flowchart: {e} in {node}"
                 )
                 raise
             except:  # noqa: E722
                 print(
-                    "Unexpected error describing subflowchart flowchart: {} in {}"
-                    .format(sys.exc_info()[0], str(node))
+                    "Unexpected error describing subflowchart flowchart: "
+                    f"{sys.exc_info()[0]} in {str(node)}."
                 )
                 logger.critical(
-                    "Unexpected error describing subflowchart flowchart: {} in {}"
-                    .format(sys.exc_info()[0], str(node))
+                    "Unexpected error describing subflowchart flowchart: "
+                    f"{sys.exc_info()[0]} in {str(node)}."
                 )
                 raise
             text += "\n"
@@ -186,37 +187,87 @@ class Subflowchart(seamm.Node):
             The next node object in the flowchart.
         """
         next_node = super().run(printer)
-        # Get the first real node
-        node = self.subflowchart.get_node("1").next()
 
-        input_data = []
+        wd = Path(self.directory)
+
+        # Find the handler for job.out and set the level up
+        job_handler = None
+        out_handler = None
+        for handler in job.handlers:
+            if (
+                isinstance(handler, logging.FileHandler)
+                and "job.out" in handler.baseFilename
+            ):
+                job_handler = handler
+                job_level = job_handler.level
+                job_handler.setLevel(printing.JOB)
+            elif isinstance(handler, logging.StreamHandler):
+                out_handler = handler
+                out_level = out_handler.level
+                out_handler.setLevel(printing.JOB)
+
+        # Make sure the subflowchart has the data from the parent flowchart
+        self.subflowchart.root_directory = self.flowchart.root_directory
+        self.subflowchart.executor = self.flowchart.executor
+        self.subflowchart.in_jobserver = self.subflowchart.in_jobserver
+
+        # Get the first real node
+        first_node = self.subflowchart.get_node("1").next()
+
+        # Ensure the nodes have their options
+        node = first_node
         while node is not None:
-            keywords = node.get_input()
-            input_data.append(" ".join(keywords))
+            node.all_options = self.all_options
             node = node.next()
 
-        files = {"molssi.dat": "\n".join(input_data)}
-        logger.info("molssi.dat:\n" + files["molssi.dat"])
+        # Run the subflowchart
+        # A handler for the file
+        if self._file_handler is not None:
+            self._file_handler.close()
+            job.removeHandler(self._file_handler)
+        path = wd / "Subflowchart.out"
+        path.unlink(missing_ok=True)
+        self._file_handler = logging.FileHandler(path)
+        self._file_handler.setLevel(printing.NORMAL)
+        formatter = logging.Formatter(fmt="{message:s}", style="{")
+        self._file_handler.setFormatter(formatter)
+        job.addHandler(self._file_handler)
 
-        local = seamm.ExecLocal()
-        result = local.run(
-            cmd=["Subflowchart", "-in", "molssi.dat"],
-            files=files,
-            return_files=[]
-        )  # yapf: disable
+        # Run through the steps in the loop body
+        node = first_node
+        try:
+            while node is not None:
+                node = node.run()
+        except DeprecationWarning as e:
+            printer.normal("\nDeprecation warning: " + str(e))
+            traceback.print_exc(file=sys.stderr)
+            traceback.print_exc(file=sys.stdout)
+        except Exception as e:
+            printer.job(f"Caught exception in subflowchart: {str(e)}")
+            with open(wd / "stderr.out", "a") as fd:
+                traceback.print_exc(file=fd)
+            raise
+        else:
+            if job_handler is not None:
+                job_handler.setLevel(job_level)
+            if out_handler is not None:
+                out_handler.setLevel(out_level)
 
-        if result is None:
-            logger.error("There was an error running Subflowchart")
-            return None
+            if job_handler is not None:
+                job_handler.setLevel(printing.JOB)
+            if out_handler is not None:
+                out_handler.setLevel(printing.JOB)
 
-        logger.debug("\n" + pprint.pformat(result))
+        # Remove any redirection of printing.
+        if self._file_handler is not None:
+            self._file_handler.close()
+            job.removeHandler(self._file_handler)
+            self._file_handler = None
+        if job_handler is not None:
+            job_handler.setLevel(job_level)
+        if out_handler is not None:
+            out_handler.setLevel(out_level)
 
-        logger.info("stdout:\n" + result["stdout"])
-        if result["stderr"] != "":
-            logger.warning("stderr:\n" + result["stderr"])
-
-        # Analyze the results
-        self.analyze()
         # Add other citations here or in the appropriate place in the code.
         # Add the bibtex to data/references.bib, and add a self.reference.cite
         # similar to the above to actually add the citation to the references.

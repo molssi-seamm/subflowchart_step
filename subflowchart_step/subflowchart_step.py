@@ -33,7 +33,7 @@ class SubflowchartStep(object):
 
     my_description = {
         "description": "An interface for Subflowchart",
-        "group": "Simulations",
+        "group": "Control",
         "name": "Subflowchart",
     }
 
