@@ -13,7 +13,7 @@ import traceback
 import subflowchart_step
 import molsystem
 import seamm
-from seamm_util import ureg, Q_  # noqa: F401
+from seamm_util import ureg, Q_, getParser  # noqa: F401
 import seamm_util.printing as printing
 from seamm_util.printing import FormattedText as __
 
@@ -117,12 +117,51 @@ class Subflowchart(seamm.Node):
         """The git version of this module."""
         return subflowchart_step.__git_revision__
 
-    def set_id(self, node_id):
-        """Set the id for node to a given tuple"""
-        self._id = node_id
+    def analyze(self, indent="", **kwargs):
+        """Do any analysis of the output from this step.
 
-        # and set our subnodes
-        self.subflowchart.set_ids(self._id)
+        Also print important results to the local step.out file using
+        "printer".
+
+        Parameters
+        ----------
+        indent: str
+            An extra indentation for the output
+        """
+        # Get the first real node
+        node = self.subflowchart.get_node("1").next()
+
+        # Loop over the subnodes, asking them to do their analysis
+        while node is not None:
+            for value in node.description:
+                printer.important(value)
+                printer.important(" ")
+
+            node.analyze()
+
+            node = node.next()
+
+    def create_parser(self):
+        """Setup the command-line / config file parser"""
+        parser_name = "subflowchart-step"
+        parser = getParser()
+
+        # Remember if the parser exists ... this type of step may have been
+        # found before
+        parser_exists = parser.exists(parser_name)
+
+        # Create the standard options, e.g. log-level
+        super().create_parser(name=parser_name)
+
+        if not parser_exists:
+            # Any options for subflowchart itself
+            pass
+
+        # Now need to walk through the steps in the subflowchart...
+        self.subflowchart.reset_visited()
+        node = self.subflowchart.get_node("1").next()
+        while node is not None:
+            node = node.create_parser()
 
         return self.next()
 
@@ -151,6 +190,7 @@ class Subflowchart(seamm.Node):
 
         text = self.header + "\n\n"
         while node is not None:
+            node.all_options = self.all_options
             try:
                 text += __(node.description_text(), indent=3 * " ").__str__()
             except Exception as e:
@@ -274,26 +314,15 @@ class Subflowchart(seamm.Node):
 
         return next_node
 
-    def analyze(self, indent="", **kwargs):
-        """Do any analysis of the output from this step.
+    def set_id(self, node_id):
+        """Set the id for node to a given tuple"""
+        self._id = node_id
 
-        Also print important results to the local step.out file using
-        "printer".
+        # Set the options in the subflowchart's nodes
+        for node in self.subflowchart:
+            node.all_options = self.all_options
 
-        Parameters
-        ----------
-        indent: str
-            An extra indentation for the output
-        """
-        # Get the first real node
-        node = self.subflowchart.get_node("1").next()
+        # and set our subnodes
+        self.subflowchart.set_ids(self._id)
 
-        # Loop over the subnodes, asking them to do their analysis
-        while node is not None:
-            for value in node.description:
-                printer.important(value)
-                printer.important(" ")
-
-            node.analyze()
-
-            node = node.next()
+        return self.next()
