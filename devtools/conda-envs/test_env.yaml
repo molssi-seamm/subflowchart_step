@@ -24,6 +24,7 @@ dependencies:
 
   # Pip-only installs
   - pip:
+    - loop-step
     # Documentation
     - sphinx-copybutton
     - sphinxnotes-strike
