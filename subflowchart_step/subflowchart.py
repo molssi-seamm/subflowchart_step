@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
-"""Non-graphical part of the Subflowchart step in a SEAMM flowchart
-"""
+"""Non-graphical part of the Subflowchart step in a SEAMM flowchart"""
 
 import logging
 from pathlib import Path
@@ -10,6 +9,7 @@ import pprint  # noqa: F401
 import sys
 import traceback
 
+from loop_step import ContinueLoop, BreakLoop, SkipIteration
 import subflowchart_step
 import molsystem
 import seamm
@@ -277,17 +277,24 @@ class Subflowchart(seamm.Node):
         node = first_node
         try:
             while node is not None:
-                node = node.run()
-        except DeprecationWarning as e:
-            printer.normal("\nDeprecation warning: " + str(e))
-            traceback.print_exc(file=sys.stderr)
-            traceback.print_exc(file=sys.stdout)
+                try:
+                    node = node.run()
+                except DeprecationWarning as e:
+                    printer.normal("\nDeprecation warning: " + str(e))
+                    traceback.print_exc(file=sys.stderr)
+                    traceback.print_exc(file=sys.stdout)
+        except ContinueLoop:
+            raise
+        except BreakLoop:
+            raise
+        except SkipIteration:
+            raise
         except Exception as e:
             printer.job(f"Caught exception in subflowchart: {str(e)}")
             with open(wd / "stderr.out", "a") as fd:
                 traceback.print_exc(file=fd)
             raise
-        else:
+        finally:
             if job_handler is not None:
                 job_handler.setLevel(job_level)
             if out_handler is not None:
@@ -298,15 +305,15 @@ class Subflowchart(seamm.Node):
             if out_handler is not None:
                 out_handler.setLevel(printing.JOB)
 
-        # Remove any redirection of printing.
-        if self._file_handler is not None:
-            self._file_handler.close()
-            job.removeHandler(self._file_handler)
-            self._file_handler = None
-        if job_handler is not None:
-            job_handler.setLevel(job_level)
-        if out_handler is not None:
-            out_handler.setLevel(out_level)
+            # Remove any redirection of printing.
+            if self._file_handler is not None:
+                self._file_handler.close()
+                job.removeHandler(self._file_handler)
+                self._file_handler = None
+            if job_handler is not None:
+                job_handler.setLevel(job_level)
+            if out_handler is not None:
+                out_handler.setLevel(out_level)
 
         # Add other citations here or in the appropriate place in the code.
         # Add the bibtex to data/references.bib, and add a self.reference.cite
