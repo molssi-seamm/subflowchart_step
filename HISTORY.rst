@@ -1,6 +1,8 @@
 =======
 History
 =======
+2026.3.1 -- Internal: switching from deprecated library pkg_resources to importlib
+
 2025.3.4: Handling breaks and continues of loops
     * Correctly pass loop exceptions, such as break and continue, that are raised in the
       flowchart up to any loop that the subflowchart is in.
